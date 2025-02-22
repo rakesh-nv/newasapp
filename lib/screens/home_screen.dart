@@ -5,6 +5,7 @@ import 'package:newsapp/view_model/news_viewModel.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:newsapp/models/category_model.dart';
+import 'package:newsapp/screens/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,7 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
-      if (index != 2) {
+      if (index == 2) {
         // If not on categories page
         _selectedCategory = ''; // Reset selected category
       }
@@ -52,9 +53,11 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(
           _selectedIndex == 2
               ? 'News Category'
-              : _selectedCategory.isNotEmpty
-                  ? _selectedCategory.toUpperCase()
-                  : 'Headlines',
+              : _selectedIndex == 3
+                  ? ''
+                  : _selectedCategory.isNotEmpty
+                      ? _selectedCategory.toUpperCase()
+                      : 'Headlines',
           style: TextStyle(
               color: Color(0xFF9D8DDE),
               fontSize: 24,
@@ -62,17 +65,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         backgroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.search, color: Colors.grey),
-            onPressed: () {
-              // TODO: Implement search
-            },
-          ),
-        ],
       ),
       backgroundColor: Colors.white,
-      body: _selectedIndex == 2 ? _buildCategoryGrid() : _buildNewsList(),
+      body: _getSelectedScreen(),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -120,60 +115,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildCategoryGrid() {
-    return GridView.builder(
-      padding: EdgeInsets.all(16),
-      physics: NeverScrollableScrollPhysics(),
-      shrinkWrap: true,
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 0.75,
-      ),
-      itemCount: categories.length,
-      itemBuilder: (context, index) {
-        return _buildCategoryCard(categories[index]);
-      },
-    );
-  }
-
-  Widget _buildCategoryCard(CategoryModel category) {
-    return GestureDetector(
-      onTap: () => _onCategorySelected(category),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          image: DecorationImage(
-            image: AssetImage(category.imageUrl),
-            fit: BoxFit.cover,
-          ),
-        ),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                Colors.black.withOpacity(0.7),
-              ],
-            ),
-          ),
-          alignment: Alignment.bottomCenter,
-          padding: EdgeInsets.all(8),
-          child: Text(
-            category.name,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
+  Widget _getSelectedScreen() {
+    switch (_selectedIndex) {
+      case 2:
+        return _buildCategoriesGrid();
+      case 3:
+        return ProfileScreen();
+      default:
+        return _buildNewsList();
+    }
   }
 
   Widget _buildNewsList() {
@@ -205,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Text('No news available'),
                 );
               }
-              
+
               // Featured article
               final featuredArticle = snapshot.data!.articles![0];
               return Stack(
@@ -310,13 +260,16 @@ class _HomeScreenState extends State<HomeScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: Color(0xFF9D8DDE).withOpacity(0.15),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
-                                    _selectedCategory.isEmpty ? 'SPORTS' : _selectedCategory.toUpperCase(),
+                                    _selectedCategory.isEmpty
+                                        ? 'SPORTS'
+                                        : _selectedCategory.toUpperCase(),
                                     style: TextStyle(
                                       color: Color(0xFF9D8DDE),
                                       fontSize: 12,
@@ -357,6 +310,101 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ],
+    );
+  }
+
+  // all Category
+  Widget _buildCategoriesGrid() {
+    return Padding(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(height: 16),
+          GridView.builder(
+            physics: NeverScrollableScrollPhysics(),
+            shrinkWrap: true,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              mainAxisExtent: 160,
+              crossAxisCount: 3,
+              childAspectRatio: 1.1,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: categories.length,
+            itemBuilder: (context, index) =>
+                _buildCategoryCard(categories[index]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Category  cards
+  Widget _buildCategoryCard(CategoryModel category) {
+    return GestureDetector(
+      onTap: () => _onCategorySelected(category),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            children: [
+              // Image with gradient overlay
+              Container(
+                decoration: BoxDecoration(
+                  image: DecorationImage(
+                    image: NetworkImage(category.imageUrl),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              // Gradient overlay
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.7),
+                    ],
+                  ),
+                ),
+              ),
+              // Category name
+              Positioned(
+                bottom: 12,
+                left: 12,
+                child: Text(
+                  category.name,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withOpacity(0.3),
+                        offset: Offset(0, 1),
+                        blurRadius: 3,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
