@@ -1,11 +1,16 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:newsapp/bloc/news_bloc.dart';
+import 'package:newsapp/bloc/news_event.dart';
+import 'package:newsapp/bloc/news_state.dart';
 import 'package:newsapp/models/news_channel_headlinesModel.dart';
-import 'package:newsapp/view_model/news_viewModel.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:newsapp/models/category_model.dart';
 import 'package:newsapp/screens/profile_screen.dart';
+import 'package:newsapp/screens/news_detail_screen.dart';
+import 'package:newsapp/screens/video_news_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,31 +20,41 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  NewsViewModel newsViewModel = NewsViewModel();
   int _selectedIndex = 0;
   String _selectedCategory = '';
 
   final List<String> _categories = [
     'Headlines',
-    'Recent',
+    'Videos',
     'Categories',
     'Profile'
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    context.read<NewsBloc>().add(const FetchNewsHeadlines());
+  }
+
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
-      if (index == 2) {
-        // If not on categories page
-        _selectedCategory = ''; // Reset selected category
+      if (index != 2 && index != 3) {
+        _selectedCategory = '';
+        if (index == 0) {
+          context.read<NewsBloc>().add(const FetchNewsHeadlines());
+        } else if (index == 1) {
+          context.read<NewsBloc>().add(const FetchVideoNews());
+        }
       }
     });
   }
 
   void _onCategorySelected(CategoryModel category) {
     setState(() {
-      _selectedIndex = 0; // Switch to home page
-      _selectedCategory = category.apiCategory; // Set selected category
+      _selectedIndex = 0;
+      _selectedCategory = category.apiCategory;
+      context.read<NewsBloc>().add(ChangeCategory(category.apiCategory));
     });
   }
 
@@ -51,13 +66,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _selectedIndex == 2
-              ? 'News Category'
-              : _selectedIndex == 3
-                  ? ''
-                  : _selectedCategory.isNotEmpty
-                      ? _selectedCategory.toUpperCase()
-                      : 'Headlines',
+          _selectedIndex == 1
+              ? 'Video News'
+              : _selectedIndex == 2
+                  ? 'News Category'
+                  : _selectedIndex == 3
+                      ? ''
+                      : _selectedCategory.isNotEmpty
+                          ? _selectedCategory.toUpperCase()
+                          : 'Headlines',
           style: TextStyle(
               color: Color(0xFF9D8DDE),
               fontSize: 24,
@@ -86,8 +103,8 @@ class _HomeScreenState extends State<HomeScreen> {
               label: '',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.access_time),
-              activeIcon: Icon(Icons.access_time_filled),
+              icon: Icon(Icons.play_circle_outline),
+              activeIcon: Icon(Icons.play_circle),
               label: '',
             ),
             BottomNavigationBarItem(
@@ -117,6 +134,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _getSelectedScreen() {
     switch (_selectedIndex) {
+      case 1:
+        return VideoNewsScreen();
       case 2:
         return _buildCategoriesGrid();
       case 3:
@@ -127,193 +146,236 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildNewsList() {
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        Container(
-          height: MediaQuery.of(context).size.height * 0.35,
-          width: double.infinity,
-          child: FutureBuilder<NewsChannelsHeadlinenModel>(
-            future: newsViewModel.fetchNewsChannelHeadlinesApi(
-              category: _selectedCategory,
+    return BlocBuilder<NewsBloc, NewsState>(
+      builder: (context, state) {
+        if (state is NewsLoading) {
+          return Center(
+            child: SpinKitCircle(
+              size: 50,
+              color: Color(0xFF9D8DDE),
             ),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return Center(
-                  child: SpinKitCircle(
-                    size: 50,
-                    color: Color(0xFF9D8DDE),
-                  ),
-                );
-              } else if (snapshot.hasError) {
-                return Center(
-                  child: Text('Error: ${snapshot.error}'),
-                );
-              } else if (!snapshot.hasData ||
-                  snapshot.data?.articles?.isEmpty == true) {
-                return Center(
-                  child: Text('No news available'),
-                );
-              }
+          );
+        } else if (state is NewsError) {
+          return Center(
+            child: Text('Error: ${state.message}'),
+          );
+        } else if (state is NewsLoaded) {
+          return ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              Container(
+                height: MediaQuery.of(context).size.height * 0.35,
+                width: double.infinity,
+                child: _buildHeadlinesList(state.news),
+              ),
+              Padding(
+                padding: EdgeInsets.all(15),
+                child: _buildNewsTilesList(state.news),
+              ),
+            ],
+          );
+        }
+        return Container();
+      },
+    );
+  }
 
-              // Featured article
-              final featuredArticle = snapshot.data!.articles![0];
-              return Stack(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      image: DecorationImage(
-                        image: NetworkImage(featuredArticle.urlToImage ?? ''),
-                        fit: BoxFit.cover,
-                      ),
+  Widget _buildHeadlinesList(NewsChannelsHeadlinenModel news) {
+    return ListView.builder(
+      itemCount: news.articles?.length ?? 0,
+      scrollDirection: Axis.horizontal,
+      itemBuilder: (context, index) {
+        var article = news.articles![index];
+        return Container(
+          width: MediaQuery.of(context).size.width * .8,
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => NewsDetailScreen(
+                    title: article.title ?? '',
+                    description: article.description ?? '',
+                    imageUrl: article.urlToImage ?? '',
+                    author: article.author ?? '',
+                    publishedAt: article.publishedAt ?? '',
+                    source: article.source?.name ?? '',
+                  ),
+                ),
+              );
+            },
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(15),
+                  child: CachedNetworkImage(
+                    imageUrl: article.urlToImage ?? '',
+                    fit: BoxFit.cover,
+                    height: MediaQuery.of(context).size.height * .35,
+                    width: MediaQuery.of(context).size.width * .8,
+                    placeholder: (context, url) => Container(
+                      child: spinKit2,
+                    ),
+                    errorWidget: (context, url, error) => Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
                     ),
                   ),
-                  Container(
+                ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
                     decoration: BoxDecoration(
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(15),
+                        bottomRight: Radius.circular(15),
+                      ),
                       gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
                         colors: [
-                          Colors.black.withOpacity(0.8),
                           Colors.transparent,
+                          Colors.black.withOpacity(0.7),
                         ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
                       ),
                     ),
-                  ),
-                  Positioned(
-                    bottom: 20,
-                    left: 20,
-                    right: 20,
+                    padding: EdgeInsets.all(15),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          featuredArticle.title ?? '',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          article.title ?? '',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          article.source?.name ?? '',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              );
-            },
+                ),
+              ],
+            ),
           ),
-        ),
-        // News list
-        FutureBuilder<NewsChannelsHeadlinenModel>(
-          future: newsViewModel.fetchNewsChannelHeadlinesApi(
-            category: _selectedCategory,
-          ),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData || snapshot.data?.articles?.isEmpty == true) {
-              return SizedBox.shrink();
-            }
+        );
+      },
+    );
+  }
 
-            return Padding(
-              padding: EdgeInsets.all(16),
-              child: ListView.builder(
-                physics: NeverScrollableScrollPhysics(),
-                shrinkWrap: true,
-                itemCount: snapshot.data!.articles!.length - 1,
-                itemBuilder: (context, index) {
-                  final article = snapshot.data!.articles![index + 1];
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: 16),
-                    child: InkWell(
-                      onTap: () {
-                        // TODO: Navigate to article detail
-                      },
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildNewsTilesList(NewsChannelsHeadlinenModel news) {
+    return ListView.builder(
+      itemCount: news.articles?.length ?? 0,
+      shrinkWrap: true,
+      physics: NeverScrollableScrollPhysics(),
+      itemBuilder: (context, index) {
+        var article = news.articles![index];
+        return InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => NewsDetailScreen(
+                  title: article.title ?? '',
+                  description: article.description ?? '',
+                  imageUrl: article.urlToImage ?? '',
+                  author: article.author ?? '',
+                  publishedAt: article.publishedAt ?? '',
+                  source: article.source?.name ?? '',
+                ),
+              ),
+            );
+          },
+          child: Container(
+            margin: EdgeInsets.only(bottom: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(15),
+                  child: CachedNetworkImage(
+                    imageUrl: article.urlToImage ?? '',
+                    fit: BoxFit.cover,
+                    height: 100,
+                    width: 100,
+                    placeholder: (context, url) => Container(
+                      child: Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) =>
+                        Icon(Icons.error_outline),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        article.title ?? '',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.black87,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Row(
                         children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: article.urlToImage ?? '',
-                              width: 100,
-                              height: 100,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                color: Colors.grey[200],
-                                child: Center(
-                                  child: SpinKitCircle(
-                                    color: Color(0xFF9D8DDE),
-                                    size: 24,
-                                  ),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                color: Colors.grey[200],
-                                child: Icon(Icons.error, color: Colors.grey),
-                              ),
+                          Icon(Icons.access_time,
+                              size: 16, color: Colors.grey),
+                          SizedBox(width: 4),
+                          Text(
+                            article.publishedAt?.substring(0, 10) ?? '',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
                             ),
                           ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Color(0xFF9D8DDE).withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    _selectedCategory.isEmpty
-                                        ? 'SPORTS'
-                                        : _selectedCategory.toUpperCase(),
-                                    style: TextStyle(
-                                      color: Color(0xFF9D8DDE),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  article.title ?? '',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.black87,
-                                    height: 1.3,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  article.publishedAt?.split('T')[0] ?? '',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
+                          Spacer(),
+                          Text(
+                            article.source?.name ?? '',
+                            style: TextStyle(
+                              color: Color(0xFF9D8DDE),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        ),
-      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
-  // all Category
+  final spinKit2 = SpinKitFadingCircle(
+    color: Color(0xFF9D8DDE),
+    size: 50,
+  );
+
   Widget _buildCategoriesGrid() {
     return Padding(
       padding: EdgeInsets.all(16),
@@ -340,7 +402,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Category  cards
   Widget _buildCategoryCard(CategoryModel category) {
     return GestureDetector(
       onTap: () => _onCategorySelected(category),
@@ -359,7 +420,6 @@ class _HomeScreenState extends State<HomeScreen> {
           borderRadius: BorderRadius.circular(12),
           child: Stack(
             children: [
-              // Image with gradient overlay
               Container(
                 decoration: BoxDecoration(
                   image: DecorationImage(
@@ -368,7 +428,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              // Gradient overlay
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -381,7 +440,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              // Category name
               Positioned(
                 bottom: 12,
                 left: 12,
